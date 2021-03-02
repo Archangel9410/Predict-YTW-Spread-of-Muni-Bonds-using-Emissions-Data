@@ -1,0 +1,690 @@
+---
+title: "8. Appendixes & R Code"
+author: "Jingze Sun"
+date: "12/11/2020"
+output:
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Set up the environment:
+```{r}
+# Clear workspace:
+rm(list = ls())
+```
+
+```{r}
+# Suppress warnings:
+options(warn = -1)
+```
+
+# Load Packages:
+```{r}
+library(ggplot2)
+library(data.table)
+library(tidyverse)
+library(writexl)
+library(readxl)
+library(lubridate)
+library(randomForest)
+library(stargazer)
+```
+
+# Raw Individual Data Sets:
+```{r}
+# Create copies of raw data for future references:
+CDP_2019_raw <- fread("Emissions_2019.csv")
+CDP_2018_raw <- fread("Emissions_2018.csv")
+CDP_2017_raw <- fread("Emissions_2017.csv")
+CDP_2016_raw <- fread("Emissions_2016.csv")
+CDP_2015_raw <- fread("Emissions_2015.csv")
+CDP_2014_raw <- fread("Emissions_2014.csv")
+CDP_2013_raw <- fread("Emissions_2013.csv")
+CDP_2012_raw <- fread("Emissions_2012.csv")
+```
+
+# Data Cleaning:
+## CDP Data:
+```{r}
+# Year 2012:
+CDP_2012 <- fread("Emissions_2012.csv")
+CDP_2012 <- CDP_2012[,c(6,7,2,1,10)]
+colnames(CDP_2012) <- c("Rep_Year","Mea_Year","ID","City","AE")
+
+# Correct the format of the annual emissions column:
+CDP_2012$AE <- as.numeric(gsub(",", "", CDP_2012$AE))
+CDP_2012[,GDP:=NA]
+```
+
+```{r}
+# Year 2013:
+CDP_2013 <- fread("Emissions_2013.csv")
+CDP_2013 <- CDP_2013[,c(6,9,2,1,10)]
+colnames(CDP_2013) <- c("Rep_Year","Mea_Year","ID","City","AE")
+
+# Correct the format of the measurement year column:
+CDP_2013[,Mea_Year:=as.integer(str_sub(Mea_Year,1,4))]
+
+# Correct the format of the annual emissions column:
+CDP_2013$AE <- as.numeric(gsub(",", "", CDP_2013$AE))
+CDP_2013[,GDP:=NA]
+```
+
+```{r}
+# Year 2014:
+CDP_2014 <- fread("Emissions_2014.csv")
+CDP_2014 <- CDP_2014[,c(6,7,2,1,10)]
+colnames(CDP_2014) <- c("Rep_Year","Mea_Year","ID","City","AE")
+
+# Correct the format of the annual emissions column:
+CDP_2014$AE <- as.numeric(gsub(",", "", CDP_2014$AE))
+
+# Correct errors in the annual emissions column based on information in the 
+# "Reason for Increase/Decrease in emissions column:
+# 1. Pittsburgh data should be 6.79 million
+CDP_2014$AE[CDP_2014$City=="City of Pittsburgh"] <- 6.79*1000000
+# 2. Seattle data should be 3.6 million
+CDP_2014$AE[CDP_2014$City=="City of Seattle"] <- 3.6*1000000
+CDP_2014[,GDP:=NA]
+
+# Note: Chicago is missing reporting year 2014 data.
+```
+
+```{r}
+# Year 2015:
+CDP_2015 <- fread("Emissions_2015.csv")
+CDP_2015 <- CDP_2015[Country=="USA",]
+CDP_2015 <- CDP_2015[,c(6,7,2,1,10)]
+colnames(CDP_2015) <- c("Rep_Year","Mea_Year","ID","City","AE")
+
+# Correct the format of the measurement year column:
+CDP_2015[,Mea_Year:=year(mdy_hm(Mea_Year))]
+
+# Correct the format of the annual emissions column:
+CDP_2015$AE <- as.numeric(gsub(",", "", CDP_2015$AE))
+CDP_2015[,GDP:=NA]
+```
+
+```{r}
+# Year 2016:
+CDP_2016 <- fread("Emissions_2016.csv")
+CDP_2016 <- CDP_2016[,c(6,7,1,2,12,19)]
+colnames(CDP_2016) <- c("Rep_Year","Mea_Year","ID","City","AE","GDP")
+
+# Correct the format of the measurement year column:
+CDP_2016[,Mea_Year:=year(mdy_hms(str_remove(Mea_Year, " AM")))]
+
+# Correct the format of the annual emissions and GDP columns:
+CDP_2016$AE <- as.numeric(gsub(",", "", CDP_2016$AE))
+CDP_2016$GDP <- as.numeric(gsub(",", "", CDP_2016$GDP))
+```
+
+```{r}
+# Year 2017:
+CDP_2017 <- fread("Emissions_2017.csv")
+CDP_2017 <- CDP_2017[,c(8,9,1,2,16,17,14,23)]
+colnames(CDP_2017) <- c("Rep_Year","Mea_Year","ID","City","S1","S2","AE","GDP")
+CDP_2017$S1 <- as.numeric(gsub(",", "", CDP_2017$S1))
+CDP_2017$S2 <- as.numeric(gsub(",", "", CDP_2017$S2))
+CDP_2017$AE <- as.numeric(gsub(",", "", CDP_2017$AE))
+CDP_2017$GDP <- as.numeric(gsub(",", "", CDP_2017$GDP))
+
+# Correct the format of the measurement year column:
+CDP_2017[,Mea_Year:=as.integer(str_sub(Mea_Year,1,4))]
+
+# Handle missing emissions data:
+CDP_2017$S1[is.na(CDP_2017$S1)] <- 0
+CDP_2017$S2[is.na(CDP_2017$S2)] <- 0
+
+CDP_2017$AE <- ifelse(!is.na(CDP_2017$AE), CDP_2017$AE, 
+                      CDP_2017$S1 + CDP_2017$S2)
+
+# Keep only relevant columns:
+CDP_2017 <- CDP_2017[,c(1:4,7,8)]
+```
+
+```{r}
+# Year 2018:
+CDP_2018 <- fread("Emissions_2018.csv")
+CDP_2018 <- CDP_2018[,c(1,10,2,3,22,23)]
+colnames(CDP_2018) <- c("Rep_Year","Mea_Year","ID","City","S1","S2")
+
+# Handle missing AE data:
+CDP_2018$S1[is.na(CDP_2018$S1)] <- 0
+CDP_2018$S2[is.na(CDP_2018$S2)] <- 0
+
+# Obtain GDP and AE columns:
+CDP_2018[,AE:=S1+S2]
+CDP_2018[,GDP:=NA]
+CDP_2018 <- CDP_2018[,c(1:4,7,8)]
+
+# Correct the format of the measurement year column:
+CDP_2018[,Mea_Year:=as.integer(str_sub(Mea_Year,1,4))]
+
+# Remove rows with missing AE data:
+CDP_2018 <- CDP_2018[!(CDP_2018$AE==0),]
+
+# We make the assumption that if the measurement year is missing, it is the 
+# same as the reporting year:
+CDP_2018[,Mea_Year:=ifelse(!is.na(Mea_Year),Mea_Year,Rep_Year)]
+```
+
+```{r}
+CDP_2019 <- fread("Emissions_2019.csv")
+CDP_2019 <- CDP_2019[,c(1,10,2,3,16:19,22,23)]
+colnames(CDP_2019) <- c("Rep_Year","Mea_Year","ID","City","S1_A",
+                        "S1_B","S2_A","S2_B","S1","S2")
+
+# Handle missing AE data:
+CDP_2019$S1_A[is.na(CDP_2019$S1_A)] <- 0
+CDP_2019$S1_B[is.na(CDP_2019$S1_B)] <- 0
+CDP_2019$S2_A[is.na(CDP_2019$S2_A)] <- 0
+CDP_2019$S2_B[is.na(CDP_2019$S2_B)] <- 0
+CDP_2019$S1 <- ifelse(!is.na(CDP_2019$S1), CDP_2019$S1, 
+                      CDP_2019$S1_A + CDP_2019$S1_B)
+CDP_2019$S2 <- ifelse(!is.na(CDP_2019$S2), CDP_2019$S2, 
+                      CDP_2019$S2_A + CDP_2019$S2_B)
+CDP_2019[,AE:=S1+S2]
+
+# Keep only relevant columns: 
+CDP_2019 <- CDP_2019[,c(1:4,11)]
+
+# Add the empty GDP column:
+CDP_2019[,GDP:=NA]
+
+# Correct the format of the measurement year column:
+CDP_2019[,Mea_Year:=as.integer(str_sub(Mea_Year,1,4))]
+
+# Remove rows with missing AE data:
+CDP_2019 <- CDP_2019[!(CDP_2019$AE==0),]
+```
+
+```{r}
+# Combine the data from each year:
+CDP_raw <- rbind(CDP_2019, CDP_2018) %>% rbind(CDP_2017) %>% 
+           rbind(CDP_2016) %>% rbind(CDP_2015) %>% rbind(CDP_2014) %>%
+           rbind(CDP_2013) %>% rbind(CDP_2012)
+# Reorder the columns:
+CDP_raw <- CDP_raw[,c(3,1,2,4:6)]
+# Sort the CDP_raw data table:
+setkey(CDP_raw, ID, Mea_Year, Rep_Year)
+# Note: At the this point, the raw combined CDP emissions data is created.
+```
+
+```{r}
+# Keep only rows with non-missing emissions data:
+CDP_raw_AE <- CDP_raw[!is.na(AE),]
+```
+
+```{r}
+# Clean the City Name column:
+
+# 1. Remove "City of" and "Town of"
+CDP_raw_AE$City = str_remove(CDP_raw_AE$City, "City of ")
+CDP_raw_AE$City = str_remove(CDP_raw_AE$City, "Town of ")
+
+# 2. Address the missing state info in city names:
+City_Dummy <- CDP_raw_AE %>%
+  group_by(ID) %>%
+  slice(1)
+```
+
+```{r}
+# 2.1 Extract individual city names:
+City_Dummy <- City_Dummy[,c(1,4)]
+
+# 2.2 Correct small errors:
+City_Dummy$City[City_Dummy$ID==35272] <- "New Haven"
+City_Dummy$City[City_Dummy$ID==49335] <- "Nashville"
+City_Dummy$City[City_Dummy$ID==52897] <- "Aspen"
+City_Dummy$City[City_Dummy$ID==35883] <- "San Jose"
+
+# 2.3 Export out the city name files:
+#write_xlsx(City_Dummy,"C:\\Users\\Michael Sun\\Desktop\\City_names.xlsx")
+
+# 3. Create the CDP raw data set with annual emissions:
+CDP_raw_AE <- CDP_raw_AE %>%
+  left_join(City_Dummy, by="ID")
+
+CDP_raw_AE <- as.data.table(CDP_raw_AE)
+
+CDP_raw_AE <- CDP_raw_AE[,c(1:3,7,5,6)]
+
+colnames(CDP_raw_AE) <- c("ID","Rep_Year","Mea_Year","City","AE", "GDP")
+
+# Sort the CDP_raw_AE data table:
+setkey(CDP_raw_AE, ID, Rep_Year, Mea_Year)
+```
+
+
+```{r}
+# Note: At this point, there are duplicate rows and rows with wrong measurement
+# year labels. To fix these two problems, we run two loops through the SORTED
+# CDP_raw_AE data table:
+
+# 1. The first loop addresses the problem with duplicates:
+CDP_raw_AE[,AE:=round(AE)]
+CDP_raw_AE[,Mea_Year_D:=NA]
+
+for (i in 1:(nrow(CDP_raw_AE)-1)) {
+  if ((CDP_raw_AE$City[i]==CDP_raw_AE$City[i+1]) &
+      (CDP_raw_AE$Mea_Year[i]==CDP_raw_AE$Mea_Year[i+1]) &
+      (CDP_raw_AE$AE[i]==CDP_raw_AE$AE[i+1])) {
+    CDP_raw_AE$Mea_Year_D[i+1] <- 1  
+  } else {
+    CDP_raw_AE$Mea_Year_D[i+1] <- 0
+  }
+}
+CDP_raw_AE$Mea_Year_D[1] <- 0
+
+# Remove duplicates:
+CDP_raw_AE <- CDP_raw_AE[Mea_Year_D==0,]
+
+# 2. The second loop ddresses the problem with wrong measurement year labels:
+for (i in 1:(nrow(CDP_raw_AE)-1)) {
+  if ((CDP_raw_AE$City[i]==CDP_raw_AE$City[i+1]) &
+      (CDP_raw_AE$Mea_Year[i]>=CDP_raw_AE$Mea_Year[i+1]) &
+      (CDP_raw_AE$AE[i]!=CDP_raw_AE$AE[i+1])) {
+    CDP_raw_AE$Mea_Year[i+1] <- CDP_raw_AE$Mea_Year[i] + 
+      (CDP_raw_AE$Rep_Year[i+1] - CDP_raw_AE$Rep_Year[i])
+  } else {
+    CDP_raw_AE$Mea_Year[i+1] <- CDP_raw_AE$Mea_Year[i+1]
+  }
+}
+
+# 3. Keep only the relevant columns:
+CDP_raw_AE <- CDP_raw_AE[,c(1,3:6)]
+colnames(CDP_raw_AE) <- c("ID","Year","City","AE", "GDP")
+```
+
+
+## GDP Data:
+```{r}
+# Drop the GDP column from the CDP_raw_AE data table:
+CDP_raw_AE[,GDP:=NULL]
+```
+
+```{r}
+# Use a loop to read all the GDP data:
+# Reference: https://medium.com/@MohWaitherero/getting-excel-files-into-r-7b82
+# a8e3d89d
+# 1. Temporarily change the working directory:
+new_wd <- "D:/Academics/UCLA Anderson MFE/Applied Finance Project/2. Literature Review & Preliminary Analysis/Preliminary Analysis/Data Sources/GDP_Data"
+setwd(new_wd)
+
+# 2. Create a list of gdp xls file names:
+gdp.list <- list.files(pattern = '*.xls')
+
+# 3. Load the GDP data into the GDP data frame:
+GDP <- lapply(gdp.list, read_excel)
+
+# 4. Unstack the GDP data frame:
+GDP <- do.call("rbind.data.frame", GDP)
+
+# 5. Correct the date column in the GDP data frame:
+GDP <- as.data.table(GDP)
+colnames(GDP) <- c("Date","GDP","City")
+GDP$Date <- as.Date(GDP$Date)
+GDP$Year <- year(GDP$Date)
+
+# 6. Drop the unneeded column:
+GDP <- as.data.table(GDP)
+GDP[,Date:=NULL]
+
+# 7. Merge GDP data with the CDP annual emissions data:
+CDP_AE_GDP <- CDP_raw_AE %>% left_join(GDP, by=c("Year","City"))
+
+# 8. Remove rows with missing GDP data:
+CDP_AE_GDP <- as.data.table(CDP_AE_GDP)
+CDP_AE_GDP <- CDP_AE_GDP[!is.na(GDP),]
+
+# 9. Add log scale annual emissions and log scale GDP variables:
+CDP_AE_GDP[,ln_GDP:=log(GDP)]
+CDP_AE_GDP[,ln_AE:=log(AE)]
+```
+
+```{r}
+# 9. Examine the idea of normalizing emissions using GDP:
+ggplot(data=CDP_AE_GDP) +
+  geom_point(mapping = aes(x=ln_GDP,y=ln_AE,color=Year)) +
+  xlab("GDP (Millions of USD) in log scale") +
+  ylab("Annual Emissions (metric tons) in log scale")
+```
+
+```{r}
+reg_AE_GDP <- lm(ln_AE ~ ln_GDP, data=CDP_AE_GDP)
+print(summary(reg_AE_GDP))
+```
+
+```{r}
+stargazer(reg_AE_GDP,
+          title="Log Annual Emissions and log GDP",
+          align=TRUE,
+          type = 'text')
+```
+
+```{r}
+# 9. Compute the Normalized Emissions data:
+CDP_AE_GDP[,Norm_AE:=AE/GDP]
+```
+
+## Municipal Bonds Data:
+```{r}
+# Use a loop to read all the Bond data:
+# 1. Temporarily change the working directory:
+new_wd_2 <- "D:/Academics/UCLA Anderson MFE/Applied Finance Project/2. Literature Review & Preliminary Analysis/Preliminary Analysis/Data Sources/Bonds_Data"
+setwd(new_wd_2)
+
+# 2. Create a list of Bond xlsx file names:
+bond.list <- list.files(pattern = '*.xlsx')
+
+# 3. Load the Bond data into the Bond data frame:
+Bond <- lapply(bond.list, read_excel)
+
+# 4. Unstack the GDP data frame:
+Bond <- do.call("rbind.data.frame", Bond)
+```
+
+```{r}
+# 5. Correct the date column in the Bond data frame:
+Bond$Date <- as.Date(Bond$Date)
+Bond$Year <- year(Bond$Date)
+
+# 6. Drop the unneeded column:
+Bond <- as.data.table(Bond)
+Bond[,Date:=NULL]
+
+# 7. Reorder and rename the columns:
+Bond <- Bond[,c(6,5,1,4,2,3)]
+colnames(Bond) <- c("Year","City","YTW","Mod_Dur","Mat_Year","Rating")
+
+# 8. Merge with the Annual Emissions and GDP data table:
+CDP_AE_GDP_Bond <- CDP_AE_GDP %>% left_join(Bond, by=c("Year","City"))
+
+# 9. Remove rows with missing Bond data:
+CDP_AE_GDP_Bond <- as.data.table(CDP_AE_GDP_Bond)
+CDP_AE_GDP_Bond <- CDP_AE_GDP_Bond[!is.na(YTW),]
+
+# 10. Compute years until bond's year of maturity:
+CDP_AE_GDP_Bond[,Yr_t_Mat:=Mat_Year-Year]
+
+# 11. Change bond ratings to factors:
+CDP_AE_GDP_Bond$Rating <- as.factor(CDP_AE_GDP_Bond$Rating)
+
+# 12. Keep only the variables that we need:
+CDP_AE_GDP_Bond <- CDP_AE_GDP_Bond[,c(1:5,8:10,13,12)] 
+```
+
+## US Federal Reserve Treasury Bond Yield Data:
+```{r}
+# The goal is here is to get the annual average CMT (or BEY):
+
+# 1. Temporarily change the working directory:
+new_wd_3 <- "D:/Academics/UCLA Anderson MFE/Applied Finance Project/2. Literature Review & Preliminary Analysis/Preliminary Analysis/Data Sources/Rates_Data"
+setwd(new_wd_3)
+
+# 2. Create a list of UST rates xlsx file names:
+rates.list <- list.files(pattern = '*.xlsx')
+
+# 3. Load the UST rates data into the UST rates data frame:
+Rates <- lapply(rates.list, read_excel)
+
+# 4. Unstack the UST rates data frame:
+Rates <- do.call("rbind.data.frame", Rates)
+
+# 5. Correct the date column in the UST rates data frame:
+Rates$Date <- as.Date(Rates$Date)
+Rates$Year <- year(Rates$Date)
+
+# 6. Keep the needed columns:
+Rates <- as.data.table(Rates)
+```
+
+```{r}
+Rates <- Rates[,c(14,9,11,12,13)]
+colnames(Rates) <- c("Year","yr_5","yr_10","yr_20","yr_30")
+Rates$yr_5 <- as.numeric(Rates$yr_5)
+Rates$yr_10 <- as.numeric(Rates$yr_10)
+Rates$yr_20 <- as.numeric(Rates$yr_20)
+Rates$yr_30 <- as.numeric(Rates$yr_30)
+
+# 7. Obtain the annual average CMT of US Treasury Bonds:
+Ann_Rates <- Rates[,list(Mean_5=mean(yr_5),
+                         Mean_10=mean(yr_10),
+                         Mean_20=mean(yr_20),
+                         Mean_30=mean(yr_30)), 
+                   by = Year]
+```
+
+```{r}
+# 8. Map the annual average CMT to the CDP_AE_GDP_Bond data table:
+CDP_ALL <- CDP_AE_GDP_Bond %>% left_join(Ann_Rates, by="Year")
+
+# 9. Sort the entire data table
+CDP_ALL <- as.data.table(CDP_ALL)
+setkey(CDP_ALL, ID, Year)
+```
+
+## Compute the YTW_spread:
+```{r}
+# 1. Isolate the appropriate UST Bond Yield for the calculation:
+tax_adj <- 1-0.35
+CDP_ALL[,Cor_Rate:=tax_adj*ifelse(Yr_t_Mat<=5,Mean_5,
+                           ifelse(Yr_t_Mat<=10,Mean_10,
+                           ifelse(Yr_t_Mat<=20,Mean_20,Mean_30)))]
+
+# 2. Get the YTW_spread variable:
+CDP_ALL[,YTW_SP:=YTW-Cor_Rate]
+```
+
+# Exploratory Data Analysis:
+## Table 1 - Number of Municipalities by Year:
+```{r}
+# Write a loop to print out the number of unique municipalities in the clean 
+# data table:
+for (i in 2010:2018) {
+  print(nrow(CDP_ALL[Year==i,]))
+}
+```
+
+## Graph 1 - Emissions Level by Year:
+```{r}
+# Create a data table that contains the annual average emissions:
+TSAE <- CDP_ALL[,list(MeanAE=mean(AE)), by = Year]
+```
+
+```{r}
+ggplot(data = TSAE, mapping = aes(x = Year, y = MeanAE)) +
+  geom_line() + ylab("Average Annual Emissions") +
+  geom_point(color="red")
+```
+
+## Graph 2 - Distribution of Bond Ratings:
+```{r}
+# Create a ratings data frame:
+CDP_Ratings <- CDP_ALL %>%
+  group_by(ID) %>%
+  slice(1)
+
+# Set the order of bond ratings
+CDP_Ratings$Rating <- factor(CDP_Ratings$Rating, 
+                             levels=c("BBB+","A-","A","A+","AA-","AA",
+                                      "AA+","AAA"))
+
+ggplot(data=CDP_Ratings) +
+  geom_bar(mapping=aes(x=Rating, fill=Rating))
+```
+
+## Graph 3 - Annual Average of the YTW Spread:
+```{r}
+# Create a data table that contains the annual average of YTW spread:
+Ann_Avg_Sp <- CDP_ALL[,list(MeanYTW_Sp=mean(YTW_SP)), by = Year]
+```
+
+```{r}
+ggplot(data = Ann_Avg_Sp, mapping = aes(x = Year, y = MeanYTW_Sp)) +
+  geom_line() + ylab("Annual Average Yield-to-Worst Spread") +
+  geom_point(color="blue")
+```
+                 
+## Graph 4 - Distribution of GDP by Year:
+```{r}
+# Use a boxplot to distribue the distribution of GDP by year:
+CDP_GDP <- CDP_ALL[,c("Year","City","GDP")]
+CDP_GDP$ln_GDP <- log(CDP_GDP$GDP)
+
+CDP_GDP$Year <- factor(CDP_GDP$Year)
+
+ggplot(data=CDP_GDP, mapping=aes(x=Year,y=ln_GDP)) +
+  geom_boxplot() +
+  ylab("ln(GDP)")
+```
+
+## Graph 5 - Scatterplot of Yield-to-Worst Spread and Normalized Emissions
+```{r}
+ggplot(data=CDP_ALL) +
+  geom_point(mapping = aes(x=Norm_AE,y=YTW_SP)) +
+  xlab("Normalized Annual Emissions") +
+  ylab("Yield-to-Worst Spread")
+```
+
+## Graph 6 - Distribution of Normalized Annual Emissions by Ratings:
+```{r}
+ggplot(data=CDP_ALL, mapping=aes(x=Rating,y=Norm_AE)) +
+  geom_boxplot() +
+  ylab("Normalized Annual Emission")
+```
+
+
+# Empirical Analysis:
+## Prepare Data for Regression Analysis:
+```{r}
+# Grab all the columns needed for regression:
+CDP_Reg <- CDP_ALL[,c(1:6, 8:10, 16)]
+CDP_Reg[,ln_GDP:=log(GDP)]
+CDP_Reg[,AE_Mil:=AE/1000000]
+print(colnames(CDP_Reg))
+```
+
+## Correlation Matrix:
+```{r}
+Reg_Matrix <- CDP_Reg[,c("Norm_AE","Mod_Dur","Yr_t_Mat","ln_GDP","AE_Mil")]
+Reg_Matrix <- as.matrix(Reg_Matrix)
+print(cor(Reg_Matrix))
+```
+
+```{r}
+Reg_Matrix <- CDP_Reg[,c("Norm_AE","Mod_Dur","Yr_t_Mat","ln_GDP","AE_Mil")]
+dur_mat <- lm(Mod_Dur ~ Yr_t_Mat, data=Reg_Matrix)
+print(summary(dur_mat))
+```
+
+## Univarite Regression Model:
+```{r}
+reg_Norm_AE <- lm(YTW_SP ~ Norm_AE, data=CDP_Reg)
+print(summary(reg_Norm_AE))
+```
+
+```{r}
+reg_Mod_Dur <- lm(YTW_SP ~ Mod_Dur, data=CDP_Reg)
+print(summary(reg_Mod_Dur))
+```
+
+```{r}
+reg_lnGDP <- lm(YTW_SP ~ ln_GDP, data=CDP_Reg)
+print(summary(reg_lnGDP))
+```
+
+## Multivariate Regression Model:
+```{r}
+reg_multi <- lm(YTW_SP ~ Norm_AE+Mod_Dur+ln_GDP+Rating, data=CDP_Reg)
+print(summary(reg_multi))
+```
+```{r}
+MSE_reg_1 <- sum((reg_multi$residuals)^2)/nrow(CDP_Reg)
+print(MSE_reg_1)
+```
+```{r, results='asis'}
+stargazer(reg_multi,
+          title="Yield-to-Worst Spread on Normalized Annual Emissions",
+          align=TRUE,
+          type = 'text')
+```
+
+```{r}
+# Does using millions of metric tons of annual emissions make a difference?
+reg_multi_2 <- lm(YTW_SP ~ AE_Mil+Mod_Dur+ln_GDP+Rating, data=CDP_Reg)
+print(summary(reg_multi_2))
+```
+
+## Random Forest Model:
+```{r}
+# Gather needed variables:
+CDP_RF <- CDP_Reg[,c("Norm_AE","Mod_Dur","Rating","YTW_SP","ln_GDP")]
+```
+
+```{r}
+# Change the ratings to dummy variables:
+CDP_RF[,Rat_A:=ifelse(Rating=="A",1,0)]
+CDP_RF[,Rat_AAm:=ifelse(Rating=="AA-",1,0)]
+CDP_RF[,Rat_AA:=ifelse(Rating=="AA",1,0)]
+CDP_RF[,Rat_AAp:=ifelse(Rating=="AA+",1,0)]
+CDP_RF[,Rat_AAA:=ifelse(Rating=="A",1,0)]
+CDP_RF$Rating <- NULL
+```
+
+```{r}
+# Create the training and test set:
+n <- nrow(CDP_RF)
+n_train <- round(0.8*n)
+set.seed(123)
+train_indices <- sample(1:n, n_train)
+CDP_RF_train <- CDP_RF[train_indices,]
+CDP_test <- CDP_RF[-train_indices,]
+```
+
+```{r}
+# Create the RF model using the 
+RF_model <- randomForest(formula = YTW_SP ~ .,
+                         data=CDP_RF_train,
+                         mtry=2) # mtry = 2 is derived from the tuning.
+print(RF_model)
+```
+
+```{r}
+# Check for variable importance:
+importance(RF_model)
+```
+
+```{r}
+# Plot variable importance
+varImpPlot(RF_model)
+```
+
+```{r}
+# Tune the mtry input of the RF model:
+res <- tuneRF(x = subset(CDP_RF_train, select = -YTW_SP),
+              y = CDP_RF_train$YTW_SP, 
+              ntreeTry = 500)
+
+print(res)
+```
+
+```{r}
+# Evaluate model performance on a test set:
+CDP_pred <- predict(object = RF_model,
+                    newdata = CDP_test)
+CDP_test_act <- CDP_test$YTW_SP
+
+MSE_RF_test <- mean((CDP_pred - CDP_test_act)^2)
+print(MSE_RF_test)
+```
+```{r}
+plot(x=CDP_test_act, y=CDP_pred,
+     xlab = "Actual Values of the Test Set",
+     ylab = "Predicted Values")
+```
